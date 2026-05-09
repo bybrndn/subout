@@ -1,0 +1,300 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>SUBOUT — Howick College</title>
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800;900&display=swap" rel="stylesheet"/>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0;}
+  body{background:#07070a;color:#f0f0f4;font-family:'Poppins',sans-serif;min-height:100vh;}
+  @keyframes fadeUp{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:translateY(0)}}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  .fade{animation:fadeUp 0.4s ease both;}
+  .fade-1{animation-delay:60ms}
+  .fade-2{animation-delay:120ms}
+  .fade-3{animation-delay:180ms}
+  .fade-4{animation-delay:240ms}
+
+  /* layout */
+  .hdr{background:#0e0e14;border-bottom:1px solid #1c1c28;padding:18px 20px 14px;}
+  .hdr-bar{height:2px;background:linear-gradient(90deg,#8B0000,transparent);margin-top:12px;}
+  .eyebrow{font-size:9px;font-weight:600;letter-spacing:0.44em;color:#8B0000;margin-bottom:4px;}
+  .title{font-size:32px;font-weight:900;letter-spacing:-0.05em;line-height:1;}
+  .subtitle{font-size:11px;color:#55556a;margin-top:4px;}
+  .container{padding:0 16px;max-width:500px;margin:0 auto;}
+
+  /* game card */
+  .game-card{background:#121219;border:1px solid #1c1c28;padding:18px;margin-top:14px;cursor:pointer;transition:border-color 0.15s;}
+  .game-card:hover{border-color:#28283a;}
+  .game-card.active{border-color:#8B0000;}
+  .game-meta{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:12px;}
+  .opp{font-size:18px;font-weight:800;color:#f0f0f4;}
+  .date{font-size:11px;color:#55556a;margin-top:2px;}
+  .badge{font-size:8px;font-weight:800;padding:3px 7px;letter-spacing:0.1em;}
+  .badge-win{background:#8B0000;color:#f0f0f4;}
+  .badge-loss{background:#28283a;color:#a0a0b4;}
+  .badge-live{background:#280000;color:#8B0000;border:1px solid #8B0000;}
+  .score-row{display:flex;align-items:center;gap:14px;}
+  .score-num{font-size:48px;font-weight:900;letter-spacing:-0.05em;line-height:1;}
+  .score-sep{font-size:20px;color:#28283a;font-weight:300;}
+  .score-them{color:#55556a;}
+  .team-lbl{font-size:9px;font-weight:600;letter-spacing:0.2em;color:#55556a;margin-bottom:4px;}
+
+  /* detail panel */
+  .detail{background:#0e0e14;border:1px solid #28283a;padding:18px;margin-top:2px;}
+  .sec-label{font-size:10px;font-weight:700;letter-spacing:0.25em;color:#55556a;margin-bottom:10px;}
+  .stat-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;background:#1c1c28;border:1px solid #1c1c28;margin-bottom:18px;}
+  .stat-cell{background:#121219;padding:14px 8px;text-align:center;}
+  .stat-val{font-size:24px;font-weight:900;line-height:1;}
+  .stat-lbl{font-size:8px;color:#55556a;letter-spacing:0.15em;margin-top:4px;}
+
+  /* highlights */
+  .highlight-card{background:#121219;border:1px solid #1c1c28;padding:14px 16px;display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;}
+  .highlight-card.red{background:#0c0000;border-color:#8B0000;}
+  .hl-label{font-size:9px;font-weight:700;letter-spacing:0.2em;margin-bottom:4px;}
+  .hl-label.red{color:#8B0000;}
+  .hl-label.grey{color:#55556a;}
+  .hl-name{font-size:17px;font-weight:800;}
+  .hl-sub{font-size:10px;color:#55556a;margin-top:2px;}
+  .hl-val{font-size:34px;font-weight:900;line-height:1;text-align:right;}
+  .hl-unit{font-size:11px;color:#55556a;margin-left:2px;}
+
+  /* player table */
+  .player-row{display:flex;align-items:center;gap:10px;padding:11px 0;border-bottom:1px solid #1c1c28;}
+  .player-name{font-size:13px;font-weight:700;flex:1;}
+  .player-stat{text-align:center;min-width:32px;}
+  .player-stat-val{font-size:15px;font-weight:900;line-height:1;}
+  .player-stat-lbl{font-size:8px;color:#55556a;letter-spacing:0.1em;margin-top:1px;}
+  .bar-wrap{flex:1;height:3px;background:#16161f;overflow:hidden;}
+  .bar-fill{height:100%;background:#8B0000;opacity:0.7;}
+
+  /* sub log */
+  .sub-row{display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid #1c1c28;font-size:12px;}
+  .sub-time{color:#55556a;min-width:56px;flex-shrink:0;}
+  .sub-in{font-weight:700;color:#f0f0f4;}
+  .sub-out{color:#8B0000;}
+
+  /* spinner */
+  .spinner{width:28px;height:28px;border:2px solid #28283a;border-top-color:#8B0000;border-radius:50%;animation:spin 0.7s linear infinite;margin:60px auto;}
+
+  /* empty */
+  .empty{text-align:center;padding:60px 0;color:#55556a;font-size:13px;}
+  .empty-num{font-size:44px;font-weight:900;color:#16161f;letter-spacing:-0.05em;margin-bottom:8px;}
+
+  /* footer */
+  .footer{text-align:center;padding:40px 0 60px;font-size:10px;color:#28283a;letter-spacing:0.15em;}
+</style>
+</head>
+<body>
+
+<div class="hdr">
+  <div class="container">
+    <div class="eyebrow">HOWICK COLLEGE</div>
+    <div class="title">SUBOUT</div>
+    <div class="subtitle">Live game results &amp; stats</div>
+  </div>
+  <div class="hdr-bar"></div>
+</div>
+
+<div class="container" id="root">
+  <div class="spinner"></div>
+</div>
+
+<div class="footer">SUBOUT · HOWICK COLLEGE BASKETBALL</div>
+
+<script>
+// ── CONFIG ── change this to your repo details
+const GITHUB_USER = 'YOUR_GITHUB_USERNAME';
+const GITHUB_REPO = 'YOUR_REPO_NAME';
+const DATA_PATH   = 'data/games.json';
+// ────────────
+
+const RAW_URL = `https://raw.githubusercontent.com/${GITHUB_USER}/${GITHUB_REPO}/main/${DATA_PATH}`;
+
+const fmt = s => String(Math.floor(s/60)).padStart(2,'0') + ':' + String(s%60).padStart(2,'0');
+const dateStr = d => new Date(d).toLocaleDateString('en-NZ',{day:'numeric',month:'short',year:'numeric'});
+
+let games = [];
+let openId = null;
+
+async function load() {
+  try {
+    const res = await fetch(RAW_URL + '?t=' + Date.now());
+    games = await res.json();
+    render();
+    // auto-refresh every 30s in case coach is live
+    setTimeout(load, 30000);
+  } catch(e) {
+    document.getElementById('root').innerHTML = '<div class="empty"><div class="empty-num">!</div>Could not load game data.</div>';
+  }
+}
+
+function render() {
+  const root = document.getElementById('root');
+  if (!games.length) {
+    root.innerHTML = '<div class="empty fade"><div class="empty-num">0–0</div>No games recorded yet.</div>';
+    return;
+  }
+
+  const sorted = [...games].sort((a,b) => b.date - a.date);
+
+  root.innerHTML = sorted.map((g, i) => {
+    const done = (g.halves||[]).length >= 2;
+    const won  = done && (g.score||{a:0,b:0}).a > (g.score||{a:0,b:0}).b;
+    const tied = done && (g.score||{a:0,b:0}).a === (g.score||{a:0,b:0}).b;
+    const isOpen = openId === g.id;
+
+    const badgeHtml = done
+      ? `<span class="badge ${won?'badge-win':'badge-loss'}">${won?'WIN':tied?'DRAW':'LOSS'}</span>`
+      : `<span class="badge badge-live">LIVE</span>`;
+
+    const detailHtml = isOpen ? buildDetail(g) : '';
+
+    return `
+      <div class="game-card fade fade-${Math.min(i+1,4)} ${isOpen?'active':''}" onclick="toggle('${g.id}')">
+        <div class="game-meta">
+          <div>
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:3px;">
+              <span class="opp">vs ${esc(g.opponent)}</span>
+              ${badgeHtml}
+            </div>
+            <div class="date">${dateStr(g.date)}</div>
+          </div>
+          <div style="font-size:13px;color:#28283a">${isOpen?'▲':'▼'}</div>
+        </div>
+        <div class="score-row">
+          <div>
+            <div class="team-lbl">HC</div>
+            <div class="score-num">${(g.score||{a:0}).a}</div>
+          </div>
+          <div class="score-sep">—</div>
+          <div>
+            <div class="team-lbl">${esc(g.opponent).toUpperCase().slice(0,10)}</div>
+            <div class="score-num score-them">${(g.score||{b:0}).b}</div>
+          </div>
+        </div>
+      </div>
+      ${detailHtml}
+    `;
+  }).join('');
+}
+
+function buildDetail(g) {
+  const allPts = g.playerPoints || {};
+  const scorers = Object.entries(allPts).filter(([,v])=>v>0).sort((a,b)=>b[1]-a[1]);
+  const allSubs = (g.halves||[]).flatMap(h=>(h.subLog||[]).map(s=>({...s,half:h.half})));
+  const totalMins = {};
+  (g.halves||[]).forEach(h=>Object.entries(h.playerSecs||{}).forEach(([id,v])=>{
+    totalMins[id] = (totalMins[id]||0) + Math.floor(v/60);
+  }));
+  const sortedMins = Object.entries(totalMins).sort((a,b)=>b[1]-a[1]);
+  const totalPts = Object.values(allPts).reduce((a,b)=>a+b,0);
+
+  const topScorer = scorers[0];
+  const mostMins  = sortedMins[0];
+  const eff = scorers.map(([id,pts])=>({
+    id, pts, mins: totalMins[id]||1,
+    e: +(pts/(totalMins[id]||1)).toFixed(2)
+  })).sort((a,b)=>b.e-a.e)[0];
+
+  const subCounts = {};
+  allSubs.forEach(s=>{ subCounts[s.inId]=(subCounts[s.inId]||0)+1; });
+  const mostSubbed = Object.entries(subCounts).sort((a,b)=>b[1]-a[1])[0];
+
+  const getName = id => {
+    const p = (g.players||[]).find(p=>String(p.id)===String(id));
+    return p ? p.name : '#'+id;
+  };
+
+  const halvesDone = (g.halves||[]).length;
+
+  let html = `<div class="detail">`;
+
+  // stats grid
+  html += `
+    <div class="stat-grid" style="margin-bottom:18px;">
+      <div class="stat-cell"><div class="stat-val">${halvesDone}/2</div><div class="stat-lbl">HALVES</div></div>
+      <div class="stat-cell"><div class="stat-val">${totalPts}</div><div class="stat-lbl">OUR PTS</div></div>
+      <div class="stat-cell"><div class="stat-val">${allSubs.length}</div><div class="stat-lbl">SUBS</div></div>
+    </div>
+  `;
+
+  // highlights
+  if (topScorer||mostMins||eff||mostSubbed) {
+    html += `<div class="sec-label">HIGHLIGHTS</div>`;
+    if (topScorer) html += `
+      <div class="highlight-card red">
+        <div><div class="hl-label red">TOP SCORER</div><div class="hl-name">${esc(getName(topScorer[0]))}</div></div>
+        <div class="hl-val">${topScorer[1]}<span class="hl-unit">pts</span></div>
+      </div>`;
+    if (mostMins) html += `
+      <div class="highlight-card">
+        <div><div class="hl-label grey">MOST TIME</div><div class="hl-name">${esc(getName(mostMins[0]))}</div></div>
+        <div class="hl-val" style="color:#a0a0b4">${mostMins[1]}<span class="hl-unit">m</span></div>
+      </div>`;
+    if (eff) html += `
+      <div class="highlight-card">
+        <div><div class="hl-label grey">MOST EFFICIENT</div><div class="hl-name">${esc(getName(eff.id))}</div><div class="hl-sub">${eff.pts}pts in ${eff.mins}m</div></div>
+        <div class="hl-val" style="color:#a0a0b4">${eff.e}<span class="hl-unit">p/m</span></div>
+      </div>`;
+    if (mostSubbed) html += `
+      <div class="highlight-card">
+        <div><div class="hl-label grey">MOST SUBBED IN</div><div class="hl-name">${esc(getName(mostSubbed[0]))}</div></div>
+        <div class="hl-val" style="color:#a0a0b4">${mostSubbed[1]}<span class="hl-unit">x</span></div>
+      </div>`;
+    html += `<div style="height:18px"></div>`;
+  }
+
+  // player stats
+  if (scorers.length || sortedMins.length) {
+    html += `<div class="sec-label">PLAYER STATS</div>`;
+    const allPlayerIds = [...new Set([...scorers.map(([id])=>id), ...sortedMins.map(([id])=>id)])];
+    const rows = allPlayerIds.map(id => ({
+      id, name: getName(id),
+      pts: allPts[id]||0,
+      mins: totalMins[id]||0,
+      subs: subCounts[id]||0,
+    })).sort((a,b)=>b.pts-a.pts||b.mins-a.mins);
+
+    html += rows.map(r => {
+      const pct = totalPts > 0 ? Math.round((r.pts/totalPts)*100) : 0;
+      return `
+        <div class="player-row">
+          <div class="player-name">${esc(r.name)}</div>
+          <div class="player-stat"><div class="player-stat-val">${r.pts}</div><div class="player-stat-lbl">PTS</div></div>
+          <div class="player-stat"><div class="player-stat-val" style="color:#a0a0b4">${r.mins}</div><div class="player-stat-lbl">MIN</div></div>
+          <div class="player-stat"><div class="player-stat-val" style="color:#a0a0b4">${r.subs}</div><div class="player-stat-lbl">SUBS</div></div>
+          ${r.pts>0?`<div class="bar-wrap"><div class="bar-fill" style="width:${pct}%"></div></div>`:''}
+        </div>`;
+    }).join('');
+    html += `<div style="height:18px"></div>`;
+  }
+
+  // sub log
+  if (allSubs.length) {
+    html += `<div class="sec-label">SUB LOG</div>`;
+    html += allSubs.map(s=>`
+      <div class="sub-row">
+        <div class="sub-time">H${s.half} ${fmt(s.elapsed||0)}</div>
+        <div><span class="sub-in">${esc(getName(s.inId))}</span> <span style="color:#55556a">/ </span><span class="sub-out">${esc(getName(s.outId))}</span>${s.note?` <span style="color:#55556a;font-size:11px">· ${esc(s.note)}</span>`:''}</div>
+      </div>`).join('');
+  }
+
+  html += `</div>`;
+  return html;
+}
+
+function toggle(id) {
+  openId = openId === id ? null : id;
+  render();
+}
+
+function esc(s) {
+  return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+load();
+</script>
+</body>
+</html>
