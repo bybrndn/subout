@@ -1,0 +1,1074 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no"/>
+<title>SUBOUT — Coach</title>
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800;900&display=swap" rel="stylesheet"/>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0;}
+  body{background:#07070a;overflow-x:hidden;}
+  @keyframes fadeUp{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:translateY(0)}}
+  @keyframes toastPop{from{opacity:0;transform:translateX(-50%) translateY(-10px)}to{opacity:1;transform:translateX(-50%) translateY(0)}}
+  @keyframes pulseRed{0%,100%{box-shadow:0 0 0 0 rgba(139,0,0,0)}50%{box-shadow:0 0 0 4px rgba(139,0,0,0.35)}}
+  @keyframes slideIn{from{opacity:0;transform:translateX(-10px)}to{opacity:1;transform:translateX(0)}}
+  @keyframes shimmer{0%,100%{opacity:0.5}50%{opacity:1}}
+  @keyframes spin{to{transform:rotate(360deg)}}
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script type="text/babel">
+const { useState, useEffect, useRef, useCallback } = React;
+
+// ── CONFIG ── fill these in ──────────────────────────────────────────────────
+const GITHUB_USER  = 'bybrndn';
+const GITHUB_REPO  = 'subout';
+const GITHUB_TOKEN = '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'; // keep this page secret!
+const DATA_PATH    = 'data/games.json';
+const BRANCH       = 'main';
+// ────────────────────────────────────────────────────────────────────────────
+
+const API_BASE = `https://api.github.com/repos/${GITHUB_USER}/${GITHUB_REPO}/contents/${DATA_PATH}`;
+
+// GitHub API helpers
+async function ghRead() {
+  const res = await fetch(API_BASE + '?ref=' + BRANCH, {
+    headers: { Authorization: `token ${GITHUB_TOKEN}`, Accept: 'application/vnd.github.v3+json' }
+  });
+  if (!res.ok) throw new Error('Read failed');
+  const json = await res.json();
+  const content = JSON.parse(atob(json.content.replace(/\n/g, '')));
+  return { data: content, sha: json.sha };
+}
+
+async function ghWrite(data, sha, msg) {
+  const res = await fetch(API_BASE, {
+    method: 'PUT',
+    headers: { Authorization: `token ${GITHUB_TOKEN}`, Accept: 'application/vnd.github.v3+json', 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      message: msg || 'update games',
+      content: btoa(unescape(encodeURIComponent(JSON.stringify(data, null, 2)))),
+      sha, branch: BRANCH
+    })
+  });
+  if (!res.ok) throw new Error('Write failed');
+  return res.json();
+}
+
+// ── CONSTANTS ────────────────────────────────────────────────────────────────
+const C = {
+  bg:"#07070a", surface:"#0e0e14", card:"#121219", cardLt:"#16161f",
+  border:"#1c1c28", borderLt:"#28283a", red:"#8B0000", redHot:"#a80000",
+  redDim:"#280000", redGlow:"rgba(139,0,0,0.12)", white:"#f0f0f4",
+  off:"#a0a0b4", grey:"#55556a", dim:"#28283a", font:"'Poppins',sans-serif",
+};
+
+const DEFAULT_PLAYERS = [
+  {id:1,name:"Alex",skill:"high",role:"guard",limited:false,isNew:false},
+  {id:2,name:"Taylor",skill:"high",role:"guard",limited:false,isNew:false},
+  {id:3,name:"Seth",skill:"high",role:"guard",limited:false,isNew:false},
+  {id:4,name:"Hannis",skill:"high",role:"tall",limited:false,isNew:false},
+  {id:5,name:"John",skill:"high",role:"tall",limited:false,isNew:false},
+  {id:6,name:"Declan",skill:"medium",role:"tall",limited:false,isNew:false},
+  {id:7,name:"Mario",skill:"medium",role:"guard",limited:false,isNew:false},
+  {id:8,name:"Makito",skill:"medium",role:"guard",limited:false,isNew:false},
+  {id:9,name:"Freedom",skill:"medium",role:"guard",limited:false,isNew:false},
+  {id:10,name:"Anthony",skill:"medium",role:"post",limited:false,isNew:false},
+  {id:11,name:"Lochlan",skill:"medium",role:"post",limited:false,isNew:false},
+  {id:12,name:"Ward",skill:"low",role:"guard",limited:true,isNew:false},
+  {id:13,name:"Levi",skill:"low",role:"guard",limited:false,isNew:true},
+];
+const DEFAULT_LINEUP = [1,2,3,4,5];
+const HALF_SECS = 1200;
+const DEFAULT_PLAN = {
+  1:[
+    {time:240,inId:7,outId:1,note:"Mario in"},{time:240,inId:8,outId:2,note:"Makito in"},
+    {time:420,inId:1,outId:8,note:"Alex back"},{time:420,inId:6,outId:4,note:"Declan in"},{time:420,inId:9,outId:3,note:"Freedom in"},
+    {time:660,inId:5,outId:7,note:"John back"},{time:660,inId:3,outId:9,note:"Seth back"},{time:660,inId:10,outId:6,note:"Post swap"},
+    {time:840,inId:4,outId:5,note:"Hannis back"},{time:840,inId:11,outId:10,note:"Post swap"},{time:840,inId:13,outId:3,note:"Levi in"},
+    {time:1020,inId:6,outId:11,note:"Declan back"},{time:1020,inId:2,outId:13,note:"Taylor closes"},{time:1020,inId:12,outId:1,note:"Ward in"},
+  ],
+  2:[
+    {time:240,inId:7,outId:5,note:"Mario in"},{time:240,inId:3,outId:9,note:"Seth in"},
+    {time:420,inId:11,outId:8,note:"Post in"},{time:420,inId:1,outId:2,note:"Alex in"},
+    {time:660,inId:5,outId:7,note:"John back"},{time:660,inId:10,outId:11,note:"Post swap"},{time:660,inId:12,outId:3,note:"Ward in"},
+    {time:840,inId:6,outId:5,note:"Declan in"},{time:840,inId:13,outId:12,note:"Levi in"},{time:840,inId:2,outId:4,note:"Taylor back"},
+    {time:1020,inId:4,outId:10,note:"Hannis closes"},{time:1020,inId:3,outId:13,note:"Seth closes"},{time:1020,inId:7,outId:1,note:"Mario closes"},
+  ],
+};
+
+const fmt = s => String(Math.floor(s/60)).padStart(2,"0")+":"+String(s%60).padStart(2,"0");
+const dateStr = d => new Date(d).toLocaleDateString("en-NZ",{day:"numeric",month:"short",year:"numeric"});
+const uid = () => Date.now().toString(36)+Math.random().toString(36).slice(2,6);
+const roleLabel = r => ({guard:"G",tall:"C",post:"F"}[r]||"?");
+const skillDot = s => ({high:"#4ade80",medium:"#facc15",low:"#f87171"}[s]||C.grey);
+
+function adaptiveSubs(onCourt,bench,playerSecs,timeLeft,players){
+  if(timeLeft<90)return[];
+  const getMins = id => Math.floor((playerSecs[id]||0)/60);
+  const target = id => {
+    const p=players.find(x=>x.id===id);
+    if(!p)return 0;
+    if(p.limited||p.isNew)return 4;
+    if(p.skill==="high")return 18;
+    if(p.skill==="medium")return 13;
+    return 5;
+  };
+  const needs = bench.map(id=>({id,gap:target(id)-getMins(id)})).filter(x=>x.gap>1).sort((a,b)=>b.gap-a.gap);
+  const over = onCourt.map(id=>({id,over:getMins(id)-target(id)})).filter(x=>x.over>0||getMins(x.id)>10).sort((a,b)=>b.over-a.over);
+  const used=new Set(), out=[];
+  for(const b of needs){
+    if(out.length>=2)break;
+    const o=over.find(c=>!used.has(c.id)&&!used.has(b.id));
+    if(!o)continue;
+    used.add(o.id);used.add(b.id);
+    const name=players.find(p=>p.id===b.id);
+    out.push({inId:b.id,outId:o.id,note:(name?name.name:"")+" needs "+b.gap+"m"});
+  }
+  return out;
+}
+
+// ── UI COMPONENTS ────────────────────────────────────────────────────────────
+function Modal({title,body,onCancel,onConfirm,confirmLabel,danger}){
+  return(
+    <div style={{position:"fixed",top:0,left:0,right:0,bottom:0,background:"rgba(0,0,0,0.88)",zIndex:200,display:"flex",alignItems:"center",justifyContent:"center",padding:"24px"}}>
+      <div style={{background:C.card,border:"1px solid "+C.borderLt,padding:"24px",width:"100%",maxWidth:"320px"}}>
+        <div style={{fontSize:"16px",fontWeight:700,color:C.white,marginBottom:"8px"}}>{title}</div>
+        {body&&<div style={{fontSize:"13px",color:C.grey,marginBottom:"20px"}}>{body}</div>}
+        <div style={{display:"flex",gap:"8px"}}>
+          <button style={{flex:1,background:"transparent",border:"1px solid "+C.borderLt,color:C.off,padding:"11px",fontSize:"13px",fontWeight:600,cursor:"pointer",fontFamily:C.font}} onClick={onCancel}>Cancel</button>
+          <button style={{flex:1,background:danger?C.red:"transparent",border:"1px solid "+(danger?C.red:C.borderLt),color:C.white,padding:"11px",fontSize:"13px",fontWeight:700,cursor:"pointer",fontFamily:C.font}} onClick={onConfirm}>{confirmLabel||"OK"}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Toast({toast}){
+  if(!toast)return null;
+  const bg={success:C.red,error:"#1a0000",warning:"#1a1200",info:"#00101a"}[toast.type]||C.red;
+  return(
+    <div style={{position:"fixed",top:"14px",left:"50%",transform:"translateX(-50%)",padding:"10px 22px",fontSize:"13px",fontWeight:600,zIndex:300,whiteSpace:"nowrap",border:"1px solid "+C.red,color:C.white,background:bg,fontFamily:C.font,animation:"toastPop 0.3s ease"}}>
+      {toast.msg}
+    </div>
+  );
+}
+
+function Fade({children,delay,style}){
+  const [v,setV]=useState(false);
+  useEffect(()=>{const t=setTimeout(()=>setV(true),delay||0);return()=>clearTimeout(t);},[delay]);
+  return(
+    <div style={{opacity:v?1:0,transform:v?"translateY(0)":"translateY(14px)",transition:`opacity 0.4s ease ${delay||0}ms, transform 0.4s ease ${delay||0}ms`,...(style||{})}}>
+      {children}
+    </div>
+  );
+}
+
+function Pill({children,onClick,red,ghost,sm,disabled,style}){
+  const base={fontFamily:C.font,fontWeight:700,letterSpacing:"0.07em",cursor:disabled?"not-allowed":"pointer",border:"none",display:"inline-flex",alignItems:"center",justifyContent:"center",opacity:disabled?0.4:1};
+  const size=sm?{padding:"9px 15px",fontSize:"12px"}:{padding:"12px 20px",fontSize:"13px"};
+  const color=red?{background:C.red,color:C.white}:ghost?{background:"transparent",border:"1px solid "+C.borderLt,color:C.off}:{background:C.dim,color:C.off,border:"1px solid "+C.borderLt};
+  return <button style={{...base,...size,...color,...(style||{})}} onClick={disabled?undefined:onClick}>{children}</button>;
+}
+
+function SmBtn({children,onClick,muted,lg}){
+  return(
+    <button style={{background:muted?C.dim:"transparent",border:"1px solid "+(muted?C.dim:C.borderLt),color:muted?C.grey:C.off,padding:lg?"11px 16px":"7px 11px",fontSize:lg?"14px":"12px",fontWeight:700,cursor:"pointer",fontFamily:C.font,minWidth:lg?"46px":"auto"}} onClick={onClick}>
+      {children}
+    </button>
+  );
+}
+
+function SecLabel({children,style}){
+  return <div style={{fontSize:"11px",fontWeight:700,letterSpacing:"0.25em",color:C.grey,marginBottom:"8px",...(style||{})}}>{children}</div>;
+}
+
+function PageHdr({title,sub,onBack,right}){
+  return(
+    <div style={{background:C.surface,borderBottom:"1px solid "+C.border,position:"sticky",top:0,zIndex:20}}>
+      <div style={{display:"flex",alignItems:"center",gap:"10px",padding:"13px 16px"}}>
+        <button style={{background:"transparent",border:"1px solid "+C.border,color:C.grey,padding:"7px 13px",fontSize:"13px",fontWeight:600,cursor:"pointer",fontFamily:C.font}} onClick={onBack}>Back</button>
+        <span style={{flex:1,fontSize:"15px",fontWeight:700,color:C.white,letterSpacing:"0.04em"}}>{title}</span>
+        {sub&&<span style={{fontSize:"11px",color:C.grey}}>{sub}</span>}
+        {right}
+      </div>
+      <div style={{height:"2px",background:`linear-gradient(90deg,${C.red},transparent)`}}/>
+    </div>
+  );
+}
+
+// ── SPLASH ───────────────────────────────────────────────────────────────────
+function Splash({onDone}){
+  const [s,setS]=useState(0);
+  useEffect(()=>{
+    const tt=[
+      setTimeout(()=>setS(1),200),
+      setTimeout(()=>setS(2),800),
+      setTimeout(()=>setS(3),1600),
+      setTimeout(()=>onDone(),2300),
+    ];
+    return()=>tt.forEach(clearTimeout);
+  },[]);
+  return(
+    <div style={{position:"fixed",top:0,left:0,right:0,bottom:0,background:C.bg,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",zIndex:999,opacity:s>=3?0:1,transition:"opacity 0.7s ease",pointerEvents:"none",fontFamily:C.font}}>
+      <div style={{position:"absolute",top:"28%",left:"50%",transform:"translate(-50%,-50%)",width:"320px",height:"320px",background:C.redGlow,borderRadius:"50%",filter:"blur(90px)",opacity:s>=1?1:0,transition:"opacity 1.2s ease 0.1s"}}/>
+      <div style={{textAlign:"center",position:"relative"}}>
+        <div style={{fontSize:"76px",fontWeight:900,letterSpacing:"-0.05em",color:C.white,lineHeight:1,opacity:s>=1?1:0,transform:s>=1?"scale(1)":"scale(0.88)",transition:"all 0.6s cubic-bezier(0.34,1.4,0.64,1) 0.1s"}}>SUBOUT</div>
+        <div style={{height:"2px",background:C.red,marginTop:"6px",transformOrigin:"center",transform:s>=2?"scaleX(1)":"scaleX(0)",transition:"transform 0.5s cubic-bezier(0.22,1,0.36,1) 0.5s"}}/>
+        <div style={{fontSize:"10px",fontWeight:600,letterSpacing:"0.42em",color:C.grey,marginTop:"10px",opacity:s>=2?1:0,transform:s>=2?"translateY(0)":"translateY(8px)",transition:"all 0.4s ease 0.85s"}}>COACH</div>
+      </div>
+      <div style={{position:"absolute",bottom:0,left:0,right:0,height:"2px",background:C.dim}}>
+        <div style={{height:"100%",background:C.red,width:s>=1?"100%":"0%",transition:"width 1.9s cubic-bezier(0.22,1,0.36,1) 0.15s"}}/>
+      </div>
+    </div>
+  );
+}
+
+// ── MAIN APP ─────────────────────────────────────────────────────────────────
+function App(){
+  const [splash,setSplash]=useState(true);
+  const [screen,setScreen]=useState("home");
+  const [games,setGames]=useState([]);
+  const [players,setPlayers]=useState(DEFAULT_PLAYERS);
+  const [lineup,setLineup]=useState(DEFAULT_LINEUP);
+  const [subPlan,setSubPlan]=useState(DEFAULT_PLAN);
+  const [activeGame,setActiveGame]=useState(null);
+  const [viewId,setViewId]=useState(null);
+  const [toast,setToast]=useState(null);
+  const [syncing,setSyncing]=useState(false);
+  const [sha,setSha]=useState(null);
+  const toastRef=useRef(null);
+
+  const showToast=useCallback((msg,type)=>{
+    setToast({msg,type:"info",...(type?{type}:{})});
+    clearTimeout(toastRef.current);
+    toastRef.current=setTimeout(()=>setToast(null),2600);
+  },[]);
+
+  // Load from GitHub on start
+  useEffect(()=>{
+    ghRead().then(({data,sha})=>{
+      setSha(sha);
+      if(Array.isArray(data)&&data.length>0) setGames(data);
+      // load local settings
+      try{
+        const ls=JSON.parse(localStorage.getItem('subout_settings')||'{}');
+        if(ls.players)setPlayers(ls.players);
+        if(ls.lineup)setLineup(ls.lineup);
+        if(ls.subPlan)setSubPlan(ls.subPlan);
+      }catch(e){}
+    }).catch(()=>showToast("Could not load from GitHub","error"));
+  },[]);
+
+  // Save settings locally (players/lineup/plan — not game data)
+  useEffect(()=>{
+    localStorage.setItem('subout_settings',JSON.stringify({players,lineup,subPlan}));
+  },[players,lineup,subPlan]);
+
+  const getP=useCallback(id=>players.find(p=>p.id===id),[players]);
+
+  // Save games to GitHub
+  const saveToGitHub=async(newGames, msg)=>{
+    setSyncing(true);
+    try{
+      // attach player snapshot so public page can show names
+      const withPlayers = newGames.map(g=>({...g,players}));
+      const {sha:newSha}=await ghRead();
+      const res=await ghWrite(withPlayers,newSha,msg||'update games');
+      setSha(res.content.sha);
+      setGames(newGames);
+      showToast("Saved ✓","success");
+    }catch(e){
+      showToast("Save failed — check connection","error");
+    }
+    setSyncing(false);
+  };
+
+  const createGame=opp=>{
+    const g={id:uid(),opponent:opp||"Opponent",date:Date.now(),halves:[],score:{a:0,b:0},playerPoints:{}};
+    return g;
+  };
+
+  const launchHalf=(game,halfNum)=>{
+    const allIds=players.map(p=>p.id);
+    const want=halfNum===1?[...lineup]:[5,4,2,9,8];
+    const start=want.filter(id=>allIds.includes(id));
+    while(start.length<5){const nxt=allIds.find(id=>!start.includes(id));if(!nxt)break;start.push(nxt);}
+    setActiveGame({
+      ...game,half:halfNum,timeLeft:HALF_SECS,running:false,
+      onCourt:start,bench:allIds.filter(id=>!start.includes(id)),
+      playerSecs:{},onSince:Object.fromEntries(start.map(id=>[id,HALF_SECS])),
+      subLog:[],doneSubs:[],selCourt:null,selBench:null,
+      playerPoints:{...game.playerPoints},score:{...game.score},
+    });
+    setScreen("game");
+  };
+
+  const saveHalf=(gameId,hd)=>{
+    setGames(prev=>{
+      const updated=prev.map(g=>{
+        if(g.id!==gameId)return g;
+        const halves=[...(g.halves||[]).filter(h=>h.half!==hd.half),hd];
+        const pts={};
+        halves.forEach(h=>Object.entries(h.playerPoints||{}).forEach(([id,v])=>{ pts[id]=(pts[id]||0)+v; }));
+        const score={a:halves.reduce((s,h)=>s+(h.scoreA||0),0),b:halves.reduce((s,h)=>s+(h.scoreB||0),0)};
+        return {...g,halves,playerPoints:pts,score};
+      });
+      saveToGitHub(updated,`game vs ${gameId} - half ${hd.half} done`);
+      return updated;
+    });
+  };
+
+  const handleNewGame=opp=>{
+    const g=createGame(opp);
+    const withNew=[g,...games];
+    saveToGitHub(withNew,`new game vs ${opp}`).then(()=>{
+      launchHalf(g,1);
+    });
+  };
+
+  if(splash)return <Splash onDone={()=>setSplash(false)}/>;
+
+  if(screen==="game"&&activeGame){
+    return(
+      <GameScreen
+        ag={activeGame} setAg={setActiveGame} players={players} subPlan={subPlan}
+        showToast={showToast} getP={getP}
+        onHalfEnd={hd=>{saveHalf(activeGame.id,hd);setScreen("home");setActiveGame(null);}}
+        onExit={()=>{setScreen("home");setActiveGame(null);}}
+      />
+    );
+  }
+  if(screen==="roster") return <RosterScreen players={players} setPlayers={setPlayers} lineup={lineup} setLineup={setLineup} getP={getP} onBack={()=>setScreen("home")} showToast={showToast}/>;
+  if(screen==="plan") return <PlanScreen subPlan={subPlan} setSubPlan={setSubPlan} getP={getP} onBack={()=>setScreen("home")}/>;
+  if(screen==="history") return <HistoryScreen games={games} setGames={g=>{setGames(g);saveToGitHub(g,"delete game");}} onSelect={id=>{setViewId(id);setScreen("detail");}} onBack={()=>setScreen("home")}/>;
+  if(screen==="detail"){
+    const g=games.find(x=>x.id===viewId);
+    return <DetailScreen game={g} players={players} onBack={()=>setScreen("history")} onDelete={id=>{const ng=games.filter(x=>x.id!==id);saveToGitHub(ng,"delete game");setScreen("home");}}/>;
+  }
+
+  return(
+    <HomeScreen
+      games={games} syncing={syncing}
+      onNew={handleNewGame}
+      onResume={(g,h)=>launchHalf(g,h)}
+      onGameTap={id=>{setViewId(id);setScreen("detail");}}
+      onHistory={()=>setScreen("history")}
+      onRoster={()=>setScreen("roster")}
+      onPlan={()=>setScreen("plan")}
+      toast={toast}
+    />
+  );
+}
+
+// ── HOME ─────────────────────────────────────────────────────────────────────
+function HomeScreen({games,syncing,onNew,onResume,onGameTap,onHistory,onRoster,onPlan,toast}){
+  const [opp,setOpp]=useState("");
+  const [creating,setCreating]=useState(false);
+  const active=games.filter(g=>(g.halves||[]).length<2);
+  const recent=games.slice(0,6);
+  return(
+    <div style={{background:C.bg,minHeight:"100vh",fontFamily:C.font,color:C.white,overflowX:"hidden"}}>
+      <Toast toast={toast}/>
+      <Fade delay={0}>
+        <div style={{padding:"44px 20px 18px",display:"flex",alignItems:"flex-end",justifyContent:"space-between"}}>
+          <div>
+            <div style={{fontSize:"9px",fontWeight:600,letterSpacing:"0.44em",color:C.red,marginBottom:"4px"}}>HOWICK COLLEGE</div>
+            <div style={{fontSize:"36px",fontWeight:900,letterSpacing:"-0.05em",color:C.white,lineHeight:1}}>SUBOUT</div>
+            {syncing&&<div style={{fontSize:"10px",color:C.grey,marginTop:"4px",display:"flex",alignItems:"center",gap:"5px"}}><div style={{width:"10px",height:"10px",border:"1px solid "+C.grey,borderTopColor:C.red,borderRadius:"50%",animation:"spin 0.7s linear infinite"}}/>Syncing...</div>}
+          </div>
+          <div style={{display:"flex",gap:"8px"}}>
+            <button style={{background:"transparent",border:"1px solid "+C.border,color:C.grey,padding:"8px 12px",fontSize:"11px",fontWeight:600,cursor:"pointer",fontFamily:C.font}} onClick={onRoster}>Roster</button>
+            <button style={{background:"transparent",border:"1px solid "+C.border,color:C.grey,padding:"8px 12px",fontSize:"11px",fontWeight:600,cursor:"pointer",fontFamily:C.font}} onClick={onHistory}>History</button>
+          </div>
+        </div>
+        <div style={{height:"2px",background:`linear-gradient(90deg,${C.red},transparent)`,margin:"0 20px"}}/>
+      </Fade>
+
+      <div style={{padding:"0 16px"}}>
+        {active.map((g,i)=>{
+          const done=(g.halves||[]).map(h=>h.half);
+          return(
+            <Fade key={g.id} delay={80+i*50}>
+              <div style={{background:C.card,border:"1px solid "+C.borderLt,padding:"18px",marginTop:"20px"}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:"12px"}}>
+                  <div>
+                    <div style={{fontSize:"9px",color:C.grey,fontWeight:600,letterSpacing:"0.15em",marginBottom:"4px"}}>IN PROGRESS</div>
+                    <div style={{fontSize:"21px",fontWeight:800,color:C.white}}>vs {g.opponent}</div>
+                    <div style={{fontSize:"11px",color:C.grey,marginTop:"2px"}}>{dateStr(g.date)}</div>
+                  </div>
+                  <div style={{display:"flex",gap:"5px"}}>
+                    {[1,2].map(h=>(
+                      <div key={h} style={{width:"28px",height:"28px",display:"flex",alignItems:"center",justifyContent:"center",fontSize:"10px",fontWeight:700,border:"1px solid "+(done.includes(h)?C.red:C.dim),color:done.includes(h)?C.white:C.grey,background:done.includes(h)?C.red:"transparent"}}>H{h}</div>
+                    ))}
+                  </div>
+                </div>
+                <div style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+                  <div style={{fontSize:"46px",fontWeight:900,letterSpacing:"-0.05em",lineHeight:1}}>
+                    {(g.score||{a:0}).a}<span style={{color:C.dim,margin:"0 8px",fontWeight:300}}>-</span><span style={{color:C.grey}}>{(g.score||{b:0}).b}</span>
+                  </div>
+                  <div>
+                    {!done.includes(1)&&<Pill red onClick={()=>onResume(g,1)}>Start H1</Pill>}
+                    {done.includes(1)&&!done.includes(2)&&<Pill red onClick={()=>onResume(g,2)}>Start H2</Pill>}
+                  </div>
+                </div>
+              </div>
+            </Fade>
+          );
+        })}
+
+        <Fade delay={140}>
+          {creating?(
+            <div style={{background:C.card,border:"1px solid "+C.borderLt,padding:"16px",marginTop:active.length>0?"12px":"24px"}}>
+              <div style={{fontSize:"9px",fontWeight:600,letterSpacing:"0.25em",color:C.grey,marginBottom:"10px"}}>VS OPPONENT</div>
+              <div style={{display:"flex",gap:"8px"}}>
+                <input style={{flex:1,background:C.surface,border:"1px solid "+C.border,padding:"11px 14px",color:C.white,fontSize:"14px",outline:"none",fontFamily:C.font}} placeholder="e.g. Pakuranga College" value={opp} onChange={e=>setOpp(e.target.value)} autoFocus
+                  onKeyDown={e=>{if(e.key==="Enter"&&opp.trim()){onNew(opp);setOpp("");setCreating(false);}}}/>
+                <Pill red onClick={()=>{if(opp.trim()){onNew(opp);setOpp("");setCreating(false);}}}>GO</Pill>
+              </div>
+              <button style={{background:"none",border:"none",color:C.grey,fontSize:"12px",cursor:"pointer",padding:"8px 0",fontFamily:C.font}} onClick={()=>setCreating(false)}>cancel</button>
+            </div>
+          ):(
+            <button style={{width:"100%",background:"transparent",border:"1px solid "+C.borderLt,padding:"17px",display:"flex",alignItems:"center",justifyContent:"center",gap:"10px",cursor:"pointer",marginTop:active.length>0?"10px":"22px"}} onClick={()=>setCreating(true)}>
+              <span style={{fontSize:"20px",color:C.red,fontWeight:300,lineHeight:1}}>+</span>
+              <span style={{fontSize:"12px",fontWeight:700,letterSpacing:"0.15em",color:C.white,fontFamily:C.font}}>NEW GAME</span>
+            </button>
+          )}
+        </Fade>
+
+        <Fade delay={180}>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"8px",marginTop:"10px"}}>
+            <button style={{background:C.card,border:"1px solid "+C.border,padding:"15px",textAlign:"left",cursor:"pointer",fontFamily:C.font}} onClick={onRoster}>
+              <div style={{fontSize:"13px",fontWeight:700,color:C.white,marginBottom:"2px"}}>Roster</div>
+              <div style={{fontSize:"10px",color:C.grey}}>Manage players</div>
+            </button>
+            <button style={{background:C.card,border:"1px solid "+C.border,padding:"15px",textAlign:"left",cursor:"pointer",fontFamily:C.font}} onClick={onPlan}>
+              <div style={{fontSize:"13px",fontWeight:700,color:C.white,marginBottom:"2px"}}>Sub Plan</div>
+              <div style={{fontSize:"10px",color:C.grey}}>Edit rotations</div>
+            </button>
+          </div>
+        </Fade>
+
+        {recent.length>0&&(
+          <Fade delay={220}>
+            <div style={{marginTop:"28px"}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"10px"}}>
+                <SecLabel style={{marginBottom:0}}>RECENT GAMES</SecLabel>
+                {games.length>6&&<button style={{background:"none",border:"none",color:C.grey,fontSize:"11px",cursor:"pointer",fontFamily:C.font}} onClick={onHistory}>View all</button>}
+              </div>
+              {recent.map((g,i)=>{
+                const done=(g.halves||[]).length>=2;
+                const won=done&&(g.score||{a:0,b:0}).a>(g.score||{a:0,b:0}).b;
+                return(
+                  <Fade key={g.id} delay={240+i*35}>
+                    <div style={{display:"flex",alignItems:"center",padding:"12px 0",borderBottom:"1px solid "+C.border,cursor:"pointer"}} onClick={()=>onGameTap(g.id)}>
+                      <div style={{flex:1}}>
+                        <div style={{display:"flex",alignItems:"center",gap:"7px",marginBottom:"2px"}}>
+                          <span style={{fontSize:"14px",fontWeight:700,color:C.white}}>vs {g.opponent}</span>
+                          {done&&<span style={{fontSize:"8px",fontWeight:700,padding:"2px 5px",color:C.white,background:won?C.red:C.dim,letterSpacing:"0.1em"}}>{won?"WIN":"LOSS"}</span>}
+                          {!done&&<span style={{fontSize:"8px",color:C.grey,letterSpacing:"0.1em"}}>IN PROGRESS</span>}
+                        </div>
+                        <div style={{fontSize:"10px",color:C.grey}}>{dateStr(g.date)}</div>
+                      </div>
+                      <div style={{fontSize:"17px",fontWeight:800,color:C.white,marginRight:"10px"}}>{(g.score||{a:0}).a}<span style={{color:C.dim,margin:"0 4px"}}>-</span>{(g.score||{b:0}).b}</div>
+                      <span style={{color:C.dim,fontSize:"13px"}}>{">"}</span>
+                    </div>
+                  </Fade>
+                );
+              })}
+            </div>
+          </Fade>
+        )}
+
+        {games.length===0&&!creating&&(
+          <Fade delay={160}>
+            <div style={{textAlign:"center",padding:"64px 0"}}>
+              <div style={{fontSize:"44px",fontWeight:900,color:C.dim,letterSpacing:"-0.05em",marginBottom:"8px"}}>0 - 0</div>
+              <div style={{fontSize:"13px",color:C.grey}}>No games yet — create one above</div>
+            </div>
+          </Fade>
+        )}
+      </div>
+      <div style={{height:"60px"}}/>
+    </div>
+  );
+}
+
+// ── GAME SCREEN ───────────────────────────────────────────────────────────────
+function GameScreen({ag,setAg,players,subPlan,showToast,getP,onHalfEnd,onExit}){
+  const timerRef=useRef(null);
+  const [tab,setTab]=useState("court");
+  const [modal,setModal]=useState(null);
+  const upd=p=>setAg(prev=>({...prev,...(typeof p==="function"?p(prev):p)}));
+
+  useEffect(()=>{
+    if(ag.running){
+      timerRef.current=setInterval(()=>{
+        setAg(prev=>{
+          if(prev.timeLeft<=1){clearInterval(timerRef.current);showToast("HALF OVER","warning");return{...prev,timeLeft:0,running:false};}
+          return{...prev,timeLeft:prev.timeLeft-1};
+        });
+      },1000);
+    }else{clearInterval(timerRef.current);}
+    return()=>clearInterval(timerRef.current);
+  },[ag.running]);
+
+  const elapsed=HALF_SECS-ag.timeLeft;
+  const urgent=ag.timeLeft<120;
+  const pct=(ag.timeLeft/HALF_SECS)*100;
+
+  const liveSecs=useCallback(id=>{
+    const base=ag.playerSecs[id]||0;
+    if(ag.onCourt.includes(id)&&ag.onSince[id]!==undefined)return base+(ag.onSince[id]-ag.timeLeft);
+    return base;
+  },[ag.playerSecs,ag.onCourt,ag.onSince,ag.timeLeft]);
+  const mins=id=>Math.floor(liveSecs(id)/60);
+
+  const pending=(subPlan[ag.half]||[]).filter(s=>{
+    const k=ag.half+"-"+s.time+"-"+s.inId+"-"+s.outId;
+    return !ag.doneSubs.includes(k)&&ag.bench.includes(s.inId)&&ag.onCourt.includes(s.outId)&&elapsed>=s.time-30&&elapsed<s.time+90;
+  });
+  const upcoming=(subPlan[ag.half]||[]).filter(s=>{
+    const k=ag.half+"-"+s.time+"-"+s.inId+"-"+s.outId;
+    return !ag.doneSubs.includes(k)&&ag.bench.includes(s.inId)&&ag.onCourt.includes(s.outId)&&s.time>elapsed+30;
+  }).sort((a,b)=>a.time-b.time).slice(0,4);
+  const suggested=adaptiveSubs(ag.onCourt,ag.bench,ag.playerSecs,ag.timeLeft,players);
+
+  const doSub=(inId,outId,note,planKey)=>{
+    if(!ag.onCourt.includes(outId)){showToast((getP(outId)||{name:"?"}).name+" not on court","error");return;}
+    if(ag.onCourt.includes(inId)){showToast((getP(inId)||{name:"?"}).name+" already playing","error");return;}
+    setAg(prev=>{
+      const add=prev.onSince[outId]!==undefined?(prev.onSince[outId]-prev.timeLeft):0;
+      const secs={...prev.playerSecs,[outId]:(prev.playerSecs[outId]||0)+add};
+      const since={...prev.onSince};
+      delete since[outId];
+      since[inId]=prev.timeLeft;
+      const done=planKey?[...prev.doneSubs,planKey]:prev.doneSubs;
+      const log=[{id:uid(),elapsed,inId,outId,note:note||""},...prev.subLog];
+      return{...prev,playerSecs:secs,onSince:since,onCourt:prev.onCourt.map(id=>id===outId?inId:id),bench:[...prev.bench.filter(id=>id!==inId),outId],doneSubs:done,subLog:log,selCourt:null,selBench:null};
+    });
+    showToast((getP(inId)||{name:"?"}).name+" IN  /  "+(getP(outId)||{name:"?"}).name+" OUT","success");
+  };
+
+  const tapCourt=id=>{if(ag.selBench!==null){doSub(ag.selBench,id);return;}upd({selCourt:ag.selCourt===id?null:id,selBench:null});};
+  const tapBench=id=>{if(ag.selCourt!==null){doSub(id,ag.selCourt);return;}upd({selBench:ag.selBench===id?null:id,selCourt:null});};
+
+  const addPts=(id,n)=>setAg(prev=>({...prev,playerPoints:{...prev.playerPoints,[id]:(prev.playerPoints[id]||0)+n},score:{...prev.score,a:(prev.score.a||0)+n}}));
+  const subPts=id=>setAg(prev=>{
+    const cur=prev.playerPoints[id]||0;
+    if(cur<=0)return prev;
+    return{...prev,playerPoints:{...prev.playerPoints,[id]:cur-1},score:{...prev.score,a:Math.max(0,(prev.score.a||0)-1)}};
+  });
+  const adjB=n=>setAg(prev=>({...prev,score:{...prev.score,b:Math.max(0,(prev.score.b||0)+n)}}));
+  const adjA=n=>setAg(prev=>({...prev,score:{...prev.score,a:Math.max(0,(prev.score.a||0)+n)}}));
+
+  const endHalf=()=>{
+    const fs={...ag.playerSecs};
+    ag.onCourt.forEach(id=>{if(ag.onSince[id]!==undefined)fs[id]=(fs[id]||0)+(ag.onSince[id]-ag.timeLeft);});
+    onHalfEnd({half:ag.half,scoreA:ag.score.a||0,scoreB:ag.score.b||0,playerPoints:ag.playerPoints||{},playerSecs:fs,subLog:ag.subLog});
+  };
+
+  const TABS=[{k:"court",l:"Court"},{k:"subs",l:"Subs"},{k:"mins",l:"Mins"}];
+
+  return(
+    <div style={{background:C.bg,minHeight:"100vh",fontFamily:C.font,color:C.white}}>
+      {modal==="exit"&&<Modal title="Exit half?" body="Progress for this half will be lost." onCancel={()=>setModal(null)} onConfirm={onExit} confirmLabel="Exit" danger/>}
+      {modal==="end"&&<Modal title={"End Half "+ag.half+"?"} body={"Score: "+ag.score.a+" - "+ag.score.b+". Saves and returns home."} onCancel={()=>setModal(null)} onConfirm={()=>{setModal(null);endHalf();}} confirmLabel="End Half" danger/>}
+
+      {/* header */}
+      <div style={{background:C.surface,borderBottom:"1px solid "+C.border,position:"sticky",top:0,zIndex:20,padding:"12px 14px",display:"flex",alignItems:"center",gap:"10px"}}>
+        <button style={{background:"transparent",border:"1px solid "+C.border,color:C.grey,padding:"7px 12px",fontSize:"12px",fontWeight:600,cursor:"pointer",fontFamily:C.font}} onClick={()=>setModal("exit")}>Back</button>
+        <div style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:"3px"}}>
+          <div style={{fontSize:"9px",fontWeight:600,letterSpacing:"0.18em",color:C.grey}}>HALF {ag.half}  {fmt(elapsed)} ELAPSED</div>
+          <div style={{fontSize:"40px",fontWeight:900,letterSpacing:"-0.05em",lineHeight:1,color:urgent?C.red:C.white,transition:"color 0.5s"}}>{fmt(ag.timeLeft)}</div>
+          <div style={{width:"100%",height:"2px",background:C.dim,overflow:"hidden"}}>
+            <div style={{height:"100%",background:C.red,width:pct+"%",transition:"width 1s linear"}}/>
+          </div>
+        </div>
+        <button style={{width:"44px",height:"44px",background:ag.running?C.red:"transparent",border:"1px solid "+(ag.running?C.red:C.borderLt),color:C.white,fontSize:"13px",fontWeight:700,cursor:"pointer",fontFamily:C.font,flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center"}} onClick={()=>upd({running:!ag.running})}>
+          {ag.running?"II":"GO"}
+        </button>
+      </div>
+
+      {/* score */}
+      <div style={{display:"flex",alignItems:"stretch",borderBottom:"1px solid "+C.border}}>
+        <div style={{flex:1,textAlign:"center",padding:"14px 8px"}}>
+          <div style={{fontSize:"9px",fontWeight:600,letterSpacing:"0.2em",color:C.grey,marginBottom:"4px"}}>HC</div>
+          <div style={{fontSize:"46px",fontWeight:900,lineHeight:1,color:C.white}}>{ag.score.a||0}</div>
+          <div style={{display:"flex",gap:"4px",justifyContent:"center",marginTop:"7px"}}><SmBtn onClick={()=>adjA(-1)} muted>-</SmBtn></div>
+        </div>
+        <div style={{display:"flex",alignItems:"center",color:C.dim,fontSize:"20px",fontWeight:300,padding:"0 6px",paddingBottom:"14px"}}>-</div>
+        <div style={{flex:1,textAlign:"center",padding:"14px 8px"}}>
+          <div style={{fontSize:"9px",fontWeight:600,letterSpacing:"0.2em",color:C.grey,marginBottom:"4px",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{(ag.opponent||"THEM").toUpperCase().slice(0,10)}</div>
+          <div style={{fontSize:"46px",fontWeight:900,lineHeight:1,color:C.grey}}>{ag.score.b||0}</div>
+          <div style={{display:"flex",gap:"4px",justifyContent:"center",marginTop:"7px"}}>
+            <SmBtn onClick={()=>adjB(-1)} muted>-</SmBtn>
+            <SmBtn onClick={()=>adjB(1)}>+1</SmBtn>
+            <SmBtn onClick={()=>adjB(2)}>+2</SmBtn>
+            <SmBtn onClick={()=>adjB(3)}>+3</SmBtn>
+          </div>
+        </div>
+      </div>
+
+      {/* pending subs */}
+      {pending.length>0&&(
+        <div style={{margin:"10px 14px",border:"1px solid "+C.red,background:"#0c0000",padding:"12px 14px",animation:"pulseRed 2s ease-in-out infinite, slideIn 0.35s ease"}}>
+          <SecLabel style={{color:C.red,marginBottom:"8px",animation:"shimmer 1.6s ease-in-out infinite"}}>SUB DUE</SecLabel>
+          {pending.map((s,i)=>(
+            <div key={i} style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:i<pending.length-1?"8px":"0"}}>
+              <div>
+                <span style={{fontWeight:700,color:C.white,fontSize:"14px"}}>{(getP(s.inId)||{name:"?"}).name}</span>
+                <span style={{color:C.grey,fontSize:"14px"}}> / </span>
+                <span style={{fontWeight:600,color:C.red,fontSize:"14px"}}>{(getP(s.outId)||{name:"?"}).name}</span>
+                {s.note&&<div style={{fontSize:"10px",color:C.grey,marginTop:"2px"}}>{s.note}</div>}
+              </div>
+              <Pill red sm onClick={()=>doSub(s.inId,s.outId,s.note,ag.half+"-"+s.time+"-"+s.inId+"-"+s.outId)}>ACCEPT</Pill>
+            </div>
+          ))}
+        </div>
+      )}
+      {suggested.length>0&&(
+        <div style={{margin:"8px 14px",border:"1px solid "+C.borderLt,padding:"12px 14px",animation:"slideIn 0.3s ease"}}>
+          <SecLabel style={{color:C.grey,marginBottom:"8px"}}>SUGGESTED</SecLabel>
+          {suggested.map((s,i)=>(
+            <div key={i} style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:i<suggested.length-1?"8px":"0"}}>
+              <div>
+                <span style={{fontWeight:700,color:C.white,fontSize:"14px"}}>{(getP(s.inId)||{name:"?"}).name}</span>
+                <span style={{color:C.grey,fontSize:"14px"}}> / </span>
+                <span style={{fontWeight:600,color:C.red,fontSize:"14px"}}>{(getP(s.outId)||{name:"?"}).name}</span>
+                {s.note&&<div style={{fontSize:"10px",color:C.grey,marginTop:"2px"}}>{s.note}</div>}
+              </div>
+              <Pill sm onClick={()=>doSub(s.inId,s.outId,s.note)}>SUB</Pill>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* selection hint */}
+      {(ag.selCourt||ag.selBench)&&(
+        <div style={{margin:"6px 14px",background:C.card,border:"1px solid "+C.borderLt,padding:"10px 14px",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+          <span style={{fontSize:"13px",color:C.off}}>
+            {ag.selCourt?"Tap bench player to replace "+(getP(ag.selCourt)||{name:"?"}).name:"Tap court player to swap in "+(getP(ag.selBench)||{name:"?"}).name}
+          </span>
+          <button style={{background:"none",border:"none",color:C.grey,fontSize:"16px",cursor:"pointer",padding:"0 4px"}} onClick={()=>upd({selCourt:null,selBench:null})}>×</button>
+        </div>
+      )}
+
+      {/* tabs */}
+      <div style={{display:"flex",borderBottom:"1px solid "+C.border,padding:"0 14px",marginTop:"4px"}}>
+        {TABS.map(t=>(
+          <button key={t.k} style={{flex:1,background:"none",border:"none",borderBottom:"2px solid "+(tab===t.k?C.red:"transparent"),color:tab===t.k?C.white:C.grey,padding:"13px 4px",fontSize:"14px",fontWeight:600,cursor:"pointer",fontFamily:C.font,transition:"all 0.18s"}} onClick={()=>setTab(t.k)}>
+            {t.l}
+          </button>
+        ))}
+      </div>
+
+      <div style={{padding:"0 14px"}}>
+        {/* court tab */}
+        {tab==="court"&&(
+          <div>
+            <SecLabel style={{marginTop:"14px"}}>ON COURT</SecLabel>
+            <div style={{display:"flex",flexDirection:"column",gap:"5px",marginBottom:"14px"}}>
+              {ag.onCourt.map((id,idx)=>{
+                const p=getP(id)||{name:"?",role:"guard",limited:false};
+                const sel=ag.selCourt===id;
+                const bsel=ag.selBench!==null;
+                const pts=(ag.playerPoints||{})[id]||0;
+                const minsPlayed=mins(id);
+                const barW=Math.min(100,(minsPlayed/20)*100);
+                return(
+                  <div key={id} style={{background:sel?C.redDim:C.card,border:"1px solid "+(sel?C.red:bsel?C.redHot:C.border),transition:"background 0.18s, border-color 0.18s, transform 0.15s",transform:sel?"scale(1.01)":"scale(1)",position:"relative",animation:`fadeUp 0.3s ease ${idx*40}ms both`}}>
+                    <div style={{display:"flex",alignItems:"center",gap:"8px",padding:"9px 10px"}}>
+                      <div style={{display:"flex",alignItems:"center",gap:"7px",flex:1,cursor:"pointer",minWidth:0}} onClick={()=>tapCourt(id)}>
+                        <div style={{fontSize:"10px",fontWeight:800,color:sel?C.red:C.grey,letterSpacing:"0.12em",flexShrink:0,width:"15px"}}>{roleLabel(p.role)}</div>
+                        <div style={{fontSize:"15px",fontWeight:700,color:C.white,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p.name}</div>
+                        {p.limited&&<div style={{fontSize:"8px",fontWeight:800,background:C.red,color:C.white,padding:"2px 5px",flexShrink:0}}>LTD</div>}
+                      </div>
+                      <div style={{width:"32px",flexShrink:0,cursor:"pointer"}} onClick={()=>tapCourt(id)}>
+                        <div style={{fontSize:"10px",color:C.grey,textAlign:"center",lineHeight:1,marginBottom:"3px"}}>{minsPlayed}m</div>
+                        <div style={{height:"2px",background:C.dim,overflow:"hidden"}}>
+                          <div style={{height:"100%",background:sel?C.red:C.borderLt,width:barW+"%",transition:"width 1s ease"}}/>
+                        </div>
+                      </div>
+                      <div style={{fontSize:"17px",fontWeight:900,color:pts>0?C.white:C.grey,minWidth:"28px",textAlign:"right",flexShrink:0,transition:"color 0.2s"}}>{pts}<span style={{fontSize:"10px",fontWeight:500,color:C.grey,marginLeft:"1px"}}>p</span></div>
+                      <div style={{display:"flex",gap:"4px",flexShrink:0}}>
+                        <button style={{width:"32px",height:"32px",background:C.dim,border:"none",color:C.grey,fontSize:"14px",fontWeight:700,cursor:"pointer",fontFamily:C.font,transition:"transform 0.1s",display:"flex",alignItems:"center",justifyContent:"center"}}
+                          onMouseDown={e=>e.currentTarget.style.transform="scale(0.88)"} onMouseUp={e=>e.currentTarget.style.transform="scale(1)"}
+                          onClick={()=>subPts(id)}>−</button>
+                        {[1,2,3].map(n=>(
+                          <button key={n} style={{width:"32px",height:"32px",background:"transparent",border:"1px solid "+C.borderLt,color:C.off,fontSize:"13px",fontWeight:700,cursor:"pointer",fontFamily:C.font,transition:"background 0.12s, transform 0.1s",display:"flex",alignItems:"center",justifyContent:"center"}}
+                            onMouseDown={e=>e.currentTarget.style.transform="scale(0.88)"} onMouseUp={e=>{e.currentTarget.style.transform="scale(1)";e.currentTarget.style.background="transparent";}}
+                            onMouseEnter={e=>e.currentTarget.style.background=C.redDim} onMouseLeave={e=>e.currentTarget.style.background="transparent"}
+                            onClick={()=>addPts(id,n)}>+{n}</button>
+                        ))}
+                      </div>
+                    </div>
+                    <div style={{position:"absolute",left:0,top:0,bottom:0,width:"2px",background:sel?C.red:"transparent",transition:"background 0.18s"}}/>
+                  </div>
+                );
+              })}
+            </div>
+
+            <SecLabel>BENCH — tap to swap</SecLabel>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:"5px",marginBottom:"10px"}}>
+              {ag.bench.map((id,idx)=>{
+                const p=getP(id)||{name:"?",role:"guard",limited:false,isNew:false};
+                const sel=ag.selBench===id;
+                const pts=(ag.playerPoints||{})[id]||0;
+                return(
+                  <div key={id} style={{background:sel?C.card:C.surface,border:"1px solid "+(sel?C.white:ag.selCourt!==null?C.redHot:C.border),padding:"8px 4px 7px",textAlign:"center",cursor:"pointer",position:"relative",transition:"background 0.15s, border-color 0.15s, transform 0.15s, opacity 0.15s",transform:sel?"scale(1.05)":"scale(1)",opacity:p.limited?0.45:1,animation:`fadeUp 0.3s ease ${idx*30}ms both`}} onClick={()=>tapBench(id)}>
+                    <div style={{fontSize:"10px",fontWeight:700,color:sel?C.white:C.grey,letterSpacing:"0.1em",transition:"color 0.15s"}}>{roleLabel(p.role)}</div>
+                    <div style={{fontSize:"13px",fontWeight:700,color:sel?C.white:C.off,marginTop:"3px",lineHeight:1.2,transition:"color 0.15s"}}>{p.name}</div>
+                    <div style={{fontSize:"10px",color:C.grey,marginTop:"3px"}}>{mins(id)}m{pts>0?` · ${pts}p`:""}</div>
+                    {p.limited&&<div style={{position:"absolute",top:"-4px",right:"-4px",background:C.red,color:C.white,fontSize:"7px",fontWeight:800,padding:"1px 4px"}}>LTD</div>}
+                    {p.isNew&&<div style={{position:"absolute",top:"-4px",left:"-4px",background:C.dim,color:C.off,fontSize:"7px",fontWeight:800,padding:"1px 4px"}}>NEW</div>}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* subs tab */}
+        {tab==="subs"&&(
+          <div style={{marginTop:"14px"}}>
+            {upcoming.length>0&&(
+              <div>
+                <SecLabel>UPCOMING</SecLabel>
+                {upcoming.map((s,i)=>(
+                  <div key={i} style={{display:"flex",alignItems:"center",gap:"10px",padding:"11px 13px",background:C.card,border:"1px solid "+C.border,marginBottom:"5px"}}>
+                    <div style={{fontSize:"13px",fontWeight:700,color:C.white,minWidth:"40px"}}>{fmt(s.time)}</div>
+                    <div style={{flex:1}}>
+                      <span style={{fontWeight:700,color:C.white}}>{(getP(s.inId)||{name:"?"}).name}</span>
+                      <span style={{color:C.grey}}> / </span>
+                      <span style={{color:C.red}}>{(getP(s.outId)||{name:"?"}).name}</span>
+                      {s.note&&<div style={{fontSize:"10px",color:C.grey,marginTop:"2px"}}>{s.note}</div>}
+                    </div>
+                    <div style={{fontSize:"10px",color:C.grey}}>-{fmt(s.time-elapsed)}</div>
+                  </div>
+                ))}
+              </div>
+            )}
+            {(ag.subLog||[]).length>0&&(
+              <div style={{marginTop:upcoming.length>0?"16px":"0"}}>
+                <SecLabel>LOG</SecLabel>
+                {(ag.subLog||[]).map(e=>(
+                  <div key={e.id} style={{display:"flex",alignItems:"center",gap:"10px",padding:"7px 0",borderBottom:"1px solid "+C.border}}>
+                    <div style={{fontSize:"10px",color:C.grey,minWidth:"40px"}}>{fmt(e.elapsed)}</div>
+                    <div style={{fontSize:"13px"}}>
+                      <span style={{fontWeight:700,color:C.white}}>{(getP(e.inId)||{name:"?"}).name}</span>
+                      <span style={{color:C.grey}}> / </span>
+                      <span style={{color:C.red}}>{(getP(e.outId)||{name:"?"}).name}</span>
+                      {e.note&&<span style={{fontSize:"10px",color:C.grey}}> · {e.note}</span>}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+            {upcoming.length===0&&(ag.subLog||[]).length===0&&<div style={{textAlign:"center",padding:"40px 0",color:C.grey,fontSize:"13px"}}>No subs yet</div>}
+          </div>
+        )}
+
+        {/* mins tab */}
+        {tab==="mins"&&(
+          <div style={{marginTop:"14px"}}>
+            <SecLabel>TIME PLAYED</SecLabel>
+            {[...players].sort((a,b)=>liveSecs(b.id)-liveSecs(a.id)).map(p=>(
+              <div key={p.id} style={{display:"flex",alignItems:"center",gap:"9px",marginBottom:"10px"}}>
+                <div style={{width:"6px",height:"6px",background:ag.onCourt.includes(p.id)?C.red:C.dim,flexShrink:0}}/>
+                <div style={{width:"64px",fontSize:"12px",fontWeight:600,flexShrink:0}}>{p.name}</div>
+                <div style={{flex:1,height:"4px",background:C.dim,overflow:"hidden"}}>
+                  <div style={{height:"100%",background:ag.onCourt.includes(p.id)?C.red:C.borderLt,width:Math.min(100,(mins(p.id)/20)*100)+"%",transition:"width 0.8s ease"}}/>
+                </div>
+                <div style={{fontSize:"11px",color:C.grey,minWidth:"24px",textAlign:"right"}}>{mins(p.id)}m</div>
+                {((ag.playerPoints||{})[p.id]||0)>0&&<div style={{fontSize:"11px",fontWeight:700,color:C.white,minWidth:"28px",textAlign:"right"}}>{(ag.playerPoints||{})[p.id]}pt</div>}
+              </div>
+            ))}
+          </div>
+        )}
+
+        <div style={{marginTop:"24px",paddingBottom:"40px"}}>
+          <button style={{width:"100%",background:C.red,border:"none",color:C.white,padding:"15px",fontSize:"13px",fontWeight:700,cursor:"pointer",fontFamily:C.font,letterSpacing:"0.1em"}} onClick={()=>setModal("end")}>
+            END HALF {ag.half}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── ROSTER ────────────────────────────────────────────────────────────────────
+function RosterScreen({players,setPlayers,lineup,setLineup,getP,onBack}){
+  const [nn,setNn]=useState("");
+  return(
+    <div style={{background:C.bg,minHeight:"100vh",fontFamily:C.font,color:C.white}}>
+      <PageHdr title="ROSTER" sub={lineup.length+"/5 starting"} onBack={onBack}/>
+      <div style={{padding:"12px 14px"}}>
+        <div style={{fontSize:"11px",color:C.grey,letterSpacing:"0.1em",marginBottom:"10px",padding:"10px 14px",background:C.card,border:"1px solid "+C.border}}>
+          Starting: {lineup.length===0?"None":lineup.map(id=>(getP(id)||{name:"?"}).name).join(", ")}
+        </div>
+        {players.map((p,i)=>(
+          <Fade key={p.id} delay={i*25}>
+            <div style={{display:"flex",alignItems:"center",gap:"8px",background:C.card,border:"1px solid "+C.border,padding:"11px 12px",marginBottom:"5px"}}>
+              <div style={{width:"8px",height:"8px",background:skillDot(p.skill),flexShrink:0}}/>
+              <span style={{fontSize:"10px",fontWeight:700,color:C.red,width:"18px",flexShrink:0}}>{roleLabel(p.role)}</span>
+              <span style={{flex:1,fontSize:"15px",fontWeight:600,color:C.white}}>{p.name}</span>
+              {p.limited&&<span style={{fontSize:"8px",fontWeight:700,background:C.red,color:C.white,padding:"2px 5px"}}>LTD</span>}
+              {p.isNew&&<span style={{fontSize:"8px",fontWeight:700,background:C.dim,color:C.off,padding:"2px 5px"}}>NEW</span>}
+              <button style={{border:"1px solid "+(lineup.includes(p.id)?C.red:C.borderLt),background:lineup.includes(p.id)?C.red:"transparent",color:lineup.includes(p.id)?C.white:C.grey,padding:"6px 9px",fontSize:"9px",fontWeight:700,cursor:"pointer",letterSpacing:"0.1em",whiteSpace:"nowrap",fontFamily:C.font}}
+                onClick={()=>setLineup(prev=>prev.includes(p.id)?prev.filter(i=>i!==p.id):prev.length<5?[...prev,p.id]:prev)}>
+                {lineup.includes(p.id)?"START":"+ START"}
+              </button>
+              <select style={{background:C.surface,color:C.grey,border:"1px solid "+C.border,padding:"5px 6px",fontSize:"11px",cursor:"pointer",fontFamily:C.font}} value={p.skill} onChange={e=>setPlayers(prev=>prev.map(pl=>pl.id===p.id?{...pl,skill:e.target.value}:pl))}>
+                <option value="high">High</option><option value="medium">Med</option><option value="low">Low</option>
+              </select>
+              <button style={{background:"transparent",border:"1px solid "+C.border,color:C.grey,padding:"5px 9px",fontSize:"12px",cursor:"pointer",fontFamily:C.font}} onClick={()=>{setPlayers(prev=>prev.filter(pl=>pl.id!==p.id));setLineup(prev=>prev.filter(i=>i!==p.id));}}>×</button>
+            </div>
+          </Fade>
+        ))}
+        <div style={{display:"flex",gap:"8px",marginTop:"10px"}}>
+          <input style={{flex:1,background:C.surface,border:"1px solid "+C.border,padding:"11px 14px",color:C.white,fontSize:"14px",outline:"none",fontFamily:C.font}} placeholder="Add player..." value={nn} onChange={e=>setNn(e.target.value)}
+            onKeyDown={e=>{if(e.key==="Enter"&&nn.trim()){setPlayers(prev=>[...prev,{id:Date.now(),name:nn.trim(),skill:"medium",role:"guard",limited:false,isNew:false}]);setNn("");}}}/>
+          <Pill red onClick={()=>{if(!nn.trim())return;setPlayers(prev=>[...prev,{id:Date.now(),name:nn.trim(),skill:"medium",role:"guard",limited:false,isNew:false}]);setNn("");}}>ADD</Pill>
+        </div>
+      </div>
+      <div style={{height:"50px"}}/>
+    </div>
+  );
+}
+
+// ── PLAN ──────────────────────────────────────────────────────────────────────
+function PlanScreen({subPlan,setSubPlan,getP,onBack}){
+  return(
+    <div style={{background:C.bg,minHeight:"100vh",fontFamily:C.font,color:C.white}}>
+      <PageHdr title="SUB PLAN" onBack={onBack}/>
+      <div style={{padding:"0 14px"}}>
+        {[1,2].map(h=>(
+          <div key={h}>
+            <SecLabel style={{color:C.red,padding:"16px 0 8px",marginBottom:0}}>HALF {h}</SecLabel>
+            {(subPlan[h]||[]).sort((a,b)=>a.time-b.time).map((s,i)=>(
+              <Fade key={i} delay={i*20}>
+                <div style={{display:"flex",alignItems:"center",gap:"10px",padding:"11px 12px",borderBottom:"1px solid "+C.border}}>
+                  <div style={{fontSize:"13px",fontWeight:700,color:C.white,minWidth:"44px"}}>{fmt(s.time)}</div>
+                  <div style={{flex:1}}>
+                    <span style={{fontWeight:700,color:C.white}}>{(getP(s.inId)||{name:"?"}).name}</span>
+                    <span style={{color:C.grey}}> / </span>
+                    <span style={{color:C.red}}>{(getP(s.outId)||{name:"?"}).name}</span>
+                    {s.note&&<div style={{fontSize:"10px",color:C.grey,marginTop:"2px"}}>{s.note}</div>}
+                  </div>
+                  <button style={{background:"transparent",border:"1px solid "+C.border,color:C.grey,padding:"5px 9px",fontSize:"12px",cursor:"pointer",fontFamily:C.font}} onClick={()=>setSubPlan(prev=>({...prev,[h]:prev[h].filter((_,j)=>j!==i)}))}>×</button>
+                </div>
+              </Fade>
+            ))}
+          </div>
+        ))}
+      </div>
+      <div style={{height:"50px"}}/>
+    </div>
+  );
+}
+
+// ── HISTORY ───────────────────────────────────────────────────────────────────
+function HistoryScreen({games,setGames,onSelect,onBack}){
+  const [delId,setDelId]=useState(null);
+  return(
+    <div style={{background:C.bg,minHeight:"100vh",fontFamily:C.font,color:C.white}}>
+      <PageHdr title="HISTORY" onBack={onBack}/>
+      {delId&&<Modal title="Delete game?" body="This cannot be undone." onCancel={()=>setDelId(null)} onConfirm={()=>{setGames(games.filter(g=>g.id!==delId));setDelId(null);}} confirmLabel="Delete" danger/>}
+      {games.length===0&&<div style={{textAlign:"center",padding:"60px 0",color:C.grey,fontSize:"14px"}}>No games yet</div>}
+      <div style={{padding:"0 14px",marginTop:"8px"}}>
+        {games.map((g,i)=>(
+          <Fade key={g.id} delay={i*35}>
+            <SwipeRow g={g} onTap={()=>onSelect(g.id)} onDelete={()=>setDelId(g.id)}/>
+          </Fade>
+        ))}
+      </div>
+      <div style={{height:"50px"}}/>
+    </div>
+  );
+}
+
+function SwipeRow({g,onTap,onDelete}){
+  const [dx,setDx]=useState(0);
+  const [moving,setMoving]=useState(false);
+  const sx=useRef(null);
+  const LIM=80;
+  const done=(g.halves||[]).length>=2;
+  const won=done&&(g.score||{a:0,b:0}).a>(g.score||{a:0,b:0}).b;
+  return(
+    <div style={{position:"relative",overflow:"hidden",marginBottom:"5px"}}>
+      <div style={{position:"absolute",top:0,right:0,bottom:0,width:LIM+"px",background:C.red,display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer"}} onClick={onDelete}>
+        <span style={{fontSize:"11px",fontWeight:700,color:C.white,letterSpacing:"0.1em"}}>DELETE</span>
+      </div>
+      <div style={{display:"flex",alignItems:"center",background:C.card,border:"1px solid "+C.border,padding:"13px 14px",cursor:"pointer",transform:"translateX("+dx+"px)",transition:moving?"none":"transform 0.22s ease"}}
+        onClick={()=>{if(dx===0)onTap();else setDx(0);}}
+        onTouchStart={e=>{sx.current=e.touches[0].clientX;setMoving(true);}}
+        onTouchMove={e=>{if(sx.current===null)return;const d=e.touches[0].clientX-sx.current;if(d<0)setDx(Math.max(-LIM,d));}}
+        onTouchEnd={()=>{setMoving(false);if(dx<-LIM/2)setDx(-LIM);else setDx(0);sx.current=null;}}>
+        <div style={{flex:1}}>
+          <div style={{display:"flex",alignItems:"center",gap:"7px",marginBottom:"3px"}}>
+            <span style={{fontSize:"15px",fontWeight:700,color:C.white}}>vs {g.opponent}</span>
+            {done&&<span style={{fontSize:"8px",fontWeight:700,padding:"2px 5px",color:C.white,background:won?C.red:C.dim,letterSpacing:"0.1em"}}>{won?"WIN":"LOSS"}</span>}
+            {!done&&<span style={{fontSize:"8px",color:C.grey,letterSpacing:"0.1em"}}>IN PROGRESS</span>}
+          </div>
+          <div style={{fontSize:"11px",color:C.grey}}>{dateStr(g.date)}</div>
+        </div>
+        <div style={{fontSize:"19px",fontWeight:800,color:C.white,marginRight:"10px"}}>{(g.score||{a:0}).a}<span style={{color:C.dim,margin:"0 4px"}}>-</span>{(g.score||{b:0}).b}</div>
+        <span style={{color:C.dim,fontSize:"13px"}}>{">"}</span>
+      </div>
+    </div>
+  );
+}
+
+// ── DETAIL ────────────────────────────────────────────────────────────────────
+function DetailScreen({game,players,onBack,onDelete}){
+  if(!game)return null;
+  const [del,setDel]=useState(false);
+  const gP=id=>(game.players||players).find(p=>p.id===id||String(p.id)===String(id))||{name:"#"+id};
+  const allPts=game.playerPoints||{};
+  const scorers=Object.entries(allPts).filter(([,v])=>v>0).sort((a,b)=>b[1]-a[1]);
+  const allSubs=(game.halves||[]).flatMap(h=>(h.subLog||[]).map(s=>({...s,half:h.half})));
+  const done=(game.halves||[]).length>=2;
+  const won=done&&(game.score||{a:0,b:0}).a>(game.score||{a:0,b:0}).b;
+  const tied=done&&(game.score||{a:0,b:0}).a===(game.score||{a:0,b:0}).b;
+  const totalMins={};
+  (game.halves||[]).forEach(h=>Object.entries(h.playerSecs||{}).forEach(([id,v])=>{ totalMins[id]=(totalMins[id]||0)+Math.floor(v/60); }));
+  const sortedMins=Object.entries(totalMins).sort((a,b)=>b[1]-a[1]);
+  const topScorer=scorers[0];
+  const mostMins=sortedMins[0];
+  const totalPts=Object.values(allPts).reduce((a,b)=>a+b,0);
+  const subCounts={};
+  allSubs.forEach(s=>{ subCounts[s.inId]=(subCounts[s.inId]||0)+1; });
+  const mostSubbed=Object.entries(subCounts).sort((a,b)=>b[1]-a[1])[0];
+  const eff=scorers.map(([id,pts])=>({id:Number(id),pts,mins:totalMins[id]||1,e:+(pts/(totalMins[id]||1)).toFixed(2)})).sort((a,b)=>b.e-a.e);
+
+  return(
+    <div style={{background:C.bg,minHeight:"100vh",fontFamily:C.font,color:C.white,overflowY:"auto"}}>
+      {del&&<Modal title="Delete game?" body={"vs "+game.opponent+" · "+dateStr(game.date)} onCancel={()=>setDel(false)} onConfirm={()=>onDelete(game.id)} confirmLabel="Delete" danger/>}
+      <div style={{background:C.surface,borderBottom:"1px solid "+C.border,position:"sticky",top:0,zIndex:20}}>
+        <div style={{display:"flex",alignItems:"center",gap:"10px",padding:"13px 16px"}}>
+          <button style={{background:"transparent",border:"1px solid "+C.border,color:C.grey,padding:"7px 13px",fontSize:"12px",fontWeight:600,cursor:"pointer",fontFamily:C.font}} onClick={onBack}>Back</button>
+          <span style={{flex:1,fontSize:"15px",fontWeight:700,color:C.white}}>vs {game.opponent}</span>
+          <button style={{background:"none",border:"1px solid "+C.border,color:C.grey,padding:"6px 11px",fontSize:"11px",cursor:"pointer",fontFamily:C.font,fontWeight:600}} onClick={()=>setDel(true)}>Delete</button>
+        </div>
+        <div style={{height:"2px",background:`linear-gradient(90deg,${C.red},transparent)`}}/>
+      </div>
+
+      <div style={{padding:"0 16px"}}>
+        <Fade delay={0}>
+          <div style={{textAlign:"center",padding:"28px 0 22px",borderBottom:"1px solid "+C.border}}>
+            {done&&<div style={{fontSize:"10px",fontWeight:700,letterSpacing:"0.35em",color:won?C.red:C.grey,marginBottom:"10px"}}>{won?"VICTORY":tied?"DRAW":"DEFEAT"}</div>}
+            <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:"18px"}}>
+              <div><div style={{fontSize:"10px",fontWeight:600,letterSpacing:"0.25em",color:C.grey,marginBottom:"5px"}}>HC</div><div style={{fontSize:"72px",fontWeight:900,lineHeight:1,color:C.white}}>{(game.score||{a:0}).a}</div></div>
+              <div style={{fontSize:"24px",color:C.dim,fontWeight:300,marginTop:"16px"}}>-</div>
+              <div><div style={{fontSize:"10px",fontWeight:600,letterSpacing:"0.25em",color:C.grey,marginBottom:"5px",maxWidth:"80px",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{game.opponent.toUpperCase()}</div><div style={{fontSize:"72px",fontWeight:900,lineHeight:1,color:C.grey}}>{(game.score||{b:0}).b}</div></div>
+            </div>
+            <div style={{fontSize:"11px",color:C.grey,marginTop:"10px"}}>{dateStr(game.date)}</div>
+          </div>
+        </Fade>
+
+        <Fade delay={60}>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:"1px",background:C.border,border:"1px solid "+C.border,margin:"18px 0"}}>
+            {[["HALVES",(game.halves||[]).length+"/2"],["OUR PTS",(game.score||{a:0}).a],["SUBS",allSubs.length]].map(([l,v])=>(
+              <div key={l} style={{background:C.card,padding:"15px 8px",textAlign:"center"}}>
+                <div style={{fontSize:"26px",fontWeight:900,color:C.white,lineHeight:1}}>{v}</div>
+                <div style={{fontSize:"8px",color:C.grey,letterSpacing:"0.15em",marginTop:"5px"}}>{l}</div>
+              </div>
+            ))}
+          </div>
+        </Fade>
+
+        <Fade delay={100}>
+          <SecLabel>HIGHLIGHTS</SecLabel>
+          <div style={{display:"flex",flexDirection:"column",gap:"7px",marginBottom:"20px"}}>
+            {topScorer&&<div style={{background:C.redDim,border:"1px solid "+C.red,padding:"13px 16px",display:"flex",alignItems:"center",justifyContent:"space-between"}}><div><div style={{fontSize:"9px",fontWeight:700,letterSpacing:"0.2em",color:C.red,marginBottom:"4px"}}>TOP SCORER</div><div style={{fontSize:"19px",fontWeight:800,color:C.white}}>{gP(Number(topScorer[0])).name}</div></div><div style={{fontSize:"38px",fontWeight:900,color:C.white,lineHeight:1}}>{topScorer[1]}<span style={{fontSize:"13px",color:C.red,marginLeft:"3px"}}>pts</span></div></div>}
+            {mostMins&&<div style={{background:C.card,border:"1px solid "+C.borderLt,padding:"13px 16px",display:"flex",alignItems:"center",justifyContent:"space-between"}}><div><div style={{fontSize:"9px",fontWeight:700,letterSpacing:"0.2em",color:C.grey,marginBottom:"4px"}}>MOST TIME</div><div style={{fontSize:"19px",fontWeight:800,color:C.white}}>{gP(Number(mostMins[0])).name}</div></div><div style={{fontSize:"38px",fontWeight:900,color:C.off,lineHeight:1}}>{mostMins[1]}<span style={{fontSize:"13px",color:C.grey,marginLeft:"3px"}}>m</span></div></div>}
+            {eff[0]&&<div style={{background:C.card,border:"1px solid "+C.borderLt,padding:"13px 16px",display:"flex",alignItems:"center",justifyContent:"space-between"}}><div><div style={{fontSize:"9px",fontWeight:700,letterSpacing:"0.2em",color:C.grey,marginBottom:"4px"}}>MOST EFFICIENT</div><div style={{fontSize:"19px",fontWeight:800,color:C.white}}>{gP(eff[0].id).name}</div><div style={{fontSize:"10px",color:C.grey,marginTop:"2px"}}>{eff[0].pts}pts in {eff[0].mins}m</div></div><div style={{fontSize:"34px",fontWeight:900,color:C.off,lineHeight:1}}>{eff[0].e}<span style={{fontSize:"10px",color:C.grey,marginLeft:"2px"}}>p/m</span></div></div>}
+            {mostSubbed&&<div style={{background:C.card,border:"1px solid "+C.borderLt,padding:"13px 16px",display:"flex",alignItems:"center",justifyContent:"space-between"}}><div><div style={{fontSize:"9px",fontWeight:700,letterSpacing:"0.2em",color:C.grey,marginBottom:"4px"}}>MOST SUBBED IN</div><div style={{fontSize:"19px",fontWeight:800,color:C.white}}>{gP(Number(mostSubbed[0])).name}</div></div><div style={{fontSize:"38px",fontWeight:900,color:C.off,lineHeight:1}}>{mostSubbed[1]}<span style={{fontSize:"13px",color:C.grey,marginLeft:"3px"}}>x</span></div></div>}
+          </div>
+        </Fade>
+
+        <Fade delay={140}>
+          <SecLabel>PLAYER STATS</SecLabel>
+          <div style={{marginBottom:"20px"}}>
+            {(game.players||players).map(p=>{
+              const pts=allPts[p.id]||0;
+              const m=totalMins[p.id]||0;
+              const sc=subCounts[p.id]||0;
+              if(m===0&&pts===0)return null;
+              const pct=totalPts>0?Math.round((pts/totalPts)*100):0;
+              return(
+                <div key={p.id} style={{borderBottom:"1px solid "+C.border,padding:"12px 0"}}>
+                  <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:"6px"}}>
+                    <div style={{display:"flex",alignItems:"center",gap:"7px"}}>
+                      <div style={{width:"6px",height:"6px",background:skillDot(p.skill||"medium")}}/>
+                      <span style={{fontSize:"14px",fontWeight:700,color:C.white}}>{p.name}</span>
+                    </div>
+                    <div style={{display:"flex",gap:"14px"}}>
+                      {[["PTS",pts],["MIN",m],["SUBS",sc]].map(([l,v])=>(
+                        <div key={l} style={{textAlign:"center"}}>
+                          <div style={{fontSize:"17px",fontWeight:900,color:l==="PTS"?C.white:C.off,lineHeight:1}}>{v}</div>
+                          <div style={{fontSize:"8px",color:C.grey,letterSpacing:"0.1em",marginTop:"2px"}}>{l}</div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                  {pts>0&&(
+                    <div style={{display:"flex",alignItems:"center",gap:"8px"}}>
+                      <div style={{flex:1,height:"3px",background:C.dim,overflow:"hidden"}}><div style={{height:"100%",background:C.red,width:pct+"%",transition:"width 0.8s ease"}}/></div>
+                      <div style={{fontSize:"10px",color:C.grey,minWidth:"30px",textAlign:"right"}}>{pct}%</div>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </Fade>
+
+        {sortedMins.length>0&&(
+          <Fade delay={180}>
+            <SecLabel>MINUTES PLAYED</SecLabel>
+            <div style={{marginBottom:"20px"}}>
+              {sortedMins.map(([id,m])=>(
+                <div key={id} style={{display:"flex",alignItems:"center",gap:"9px",marginBottom:"9px"}}>
+                  <div style={{width:"60px",fontSize:"12px",fontWeight:600,color:C.off,flexShrink:0}}>{gP(Number(id)).name}</div>
+                  <div style={{flex:1,height:"5px",background:C.dim,overflow:"hidden"}}><div style={{height:"100%",background:C.red,opacity:0.75,width:Math.min(100,(m/40)*100)+"%",transition:"width 0.8s ease"}}/></div>
+                  <div style={{fontSize:"11px",color:C.grey,minWidth:"24px",textAlign:"right"}}>{m}m</div>
+                </div>
+              ))}
+            </div>
+          </Fade>
+        )}
+
+        {allSubs.length>0&&(
+          <Fade delay={220}>
+            <SecLabel>SUB LOG</SecLabel>
+            <div style={{marginBottom:"20px"}}>
+              {allSubs.map((e,i)=>(
+                <div key={i} style={{display:"flex",alignItems:"center",gap:"10px",padding:"8px 0",borderBottom:"1px solid "+C.border}}>
+                  <div style={{fontSize:"10px",color:C.grey,minWidth:"52px",flexShrink:0}}>H{e.half} {fmt(e.elapsed||0)}</div>
+                  <div style={{fontSize:"13px"}}>
+                    <span style={{fontWeight:700,color:C.white}}>{gP(e.inId).name}</span>
+                    <span style={{color:C.grey}}> / </span>
+                    <span style={{color:C.red}}>{gP(e.outId).name}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </Fade>
+        )}
+      </div>
+      <div style={{height:"60px"}}/>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
+</script>
+</body>
+</html>
